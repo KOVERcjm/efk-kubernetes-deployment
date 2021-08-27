@@ -1,0 +1,51 @@
+# Azure Storage Account
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: my-azurefile
+  namespace: logging
+provisioner: kubernetes.io/azure-file
+mountOptions:
+  - dir_mode=0777
+  - file_mode=0777
+  - uid=0
+  - gid=0
+  - mfsymlinks
+  - cache=strict
+  - actimeo=30
+parameters:
+  skuName: Standard_LRS
+---
+apiVersion: elasticsearch.k8s.elastic.co/v1
+kind: Elasticsearch
+metadata:
+  name: efk
+  namespace: logging
+spec:
+  version: 7.14.0
+  nodeSets:
+    - name: default
+      count: 2
+      config:
+        node.store.allow_mmap: false
+      volumeClaimTemplates:
+        - metadata:
+            name: elasticsearch-data
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 1Gi
+            storageClassName: my-azurefile
+---
+apiVersion: kibana.k8s.elastic.co/v1
+kind: Kibana
+metadata:
+  name: efk
+  namespace: logging
+spec:
+  version: 7.14.0
+  count: 1
+  elasticsearchRef:
+    name: efk

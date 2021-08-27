@@ -1,0 +1,5 @@
+# Ignore MacOS Related
+.DS_Store
+
+# Ignore JetBrains Related
+.idea

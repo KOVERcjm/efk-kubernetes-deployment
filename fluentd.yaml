@@ -1,0 +1,117 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: efk-fluentd-config
+  namespace: logging
+data:
+  forward.input.conf: |-
+    # Takes the messages sent over TCP
+    <source>
+      @id fluentd-containers.log
+      @type tail
+      path /var/log/containers/*_default_*.log
+      exclude_path ["/var/log/containers/fluentd*"]
+      pos_file /var/log/es-containers.log.pos
+      <parse>
+        @type regexp
+        expression /^(?<time>[^ ]+) (?<stream>stdout|stderr) (?<flags>[^ ]+) (?<message>.*)$/
+        time_format %Y-%m-%dT%H:%M:%S.%N%:z
+      </parse>
+      tag raw.kubernetes.*
+      read_from_head true
+    </source>
+  output.conf: |-
+    <match **>
+      @type elasticsearch
+      @log_level info
+      include_tag_key true
+      host efk-es-http.default.svc.cluster.local
+      port 9200
+      user "elastic"
+      password "your elastic password"
+      scheme https
+      ssl_verify false
+      ssl_version TLSv1_2
+      logstash_format true
+      # Set the chunk limits.
+      buffer_chunk_limit 2M
+      buffer_queue_limit 8
+      flush_interval 5s
+      # Never wait longer than 5 minutes between retries.
+      max_retry_wait 30
+      # Disable the limit on the number of retries (retry forever).
+      disable_retry_limit
+      # Use multiple threads for processing.
+      num_threads 2
+      reload_connections false
+      reconnect_on_error true
+      reload_on_failure true
+    </match>
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: efk-fluentd
+  namespace: logging
+  labels:
+    app: efk-fluentd
+spec:
+  selector:
+    app: efk-fluentd
+  ports:
+    - name: fluentd-tcp
+      port: 24224
+      protocol: TCP
+      targetPort: 24224
+    - name: fluentd-udp
+      port: 24224
+      protocol: UDP
+      targetPort: 24224
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: efk-fluentd
+  namespace: logging
+  labels:
+    app: efk-fluentd
+spec:
+  selector:
+    matchLabels:
+      app: efk-fluentd
+  template:
+    metadata:
+      labels:
+        app: efk-fluentd
+    spec:
+      containers:
+        - name: efk-fluentd
+          image: quay.io/fluentd_elasticsearch/fluentd:v3.0.2
+          env:
+            - name: FLUENTD_ARGS
+              value: --no-supervisor -q
+          resources:
+            limits:
+              memory: 500Mi
+            requests:
+              cpu: 100m
+              memory: 200Mi
+          volumeMounts:
+            - name: varlog
+              mountPath: /var/log
+            - name: varlibdockercontainers
+              mountPath: /var/lib/docker/containers
+              readOnly: true
+            - name: config-volume
+              mountPath: /etc/fluent/config.d
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - name: varlog
+          hostPath:
+            path: /var/log
+        - name: varlibdockercontainers
+          hostPath:
+            path: /var/lib/docker/containers
+        - name: config-volume
+          configMap:
+            name: efk-fluentd-config
