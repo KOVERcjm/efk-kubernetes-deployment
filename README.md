@@ -20,10 +20,22 @@ kubectl create namespace logging
 kubectl apply -f elasticsearch-kibana_default.yaml    # with default storage
 ```
 
-**Step 3**: Deploy Fluentd.
+**Step 3**: Replace actual elasticsearch password in `fluentd.yaml` and deploy Fluentd.
 
 ``` shell
+# Get elasticsearch password
+kubectl get secret efk-es-elastic-user -n logging -o=jsonpath='{.data.elastic}' | base64 --decode; echo
 kubectl apply -f fluentd.yaml
+```
+
+# Visualization
+
+To visit Kibana or Elasticsearch from local, Kubernetes services need to be forwarded.
+```shell
+# Forward Kibana
+kubectl port-forward service/efk-kb-http -n logging 5601
+# Forward Elasticsearch
+kubectl port-forward service/efk-es-http -n logging 9200
 ```
 
 # Customized Usage
